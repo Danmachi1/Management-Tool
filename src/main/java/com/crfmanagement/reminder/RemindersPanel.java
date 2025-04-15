@@ -1,280 +1,141 @@
 package com.crfmanagement.reminder;
 
-import com.crfmanagement.notes.Note;
 import com.crfmanagement.settings.SettingsManager;
 
 import javax.swing.*;
-import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.table.TableRowSorter;
 import java.awt.*;
-import java.io.*;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
 public class RemindersPanel extends JPanel {
+    private final DefaultTableModel tableModel;
+    private final List<Reminder> reminders;
     private JTable table;
-    private DefaultTableModel tableModel;
-    private List<Reminder> reminders;
-    private TableRowSorter<DefaultTableModel> rowSorter;
-    private JTextField searchField;
-    private JScrollPane scrollPane;
+    private final SettingsManager settingsManager;
 
     public RemindersPanel() {
-        setLayout(new BorderLayout());
+        super(new BorderLayout());
+        this.reminders = new ArrayList<>();
+        this.settingsManager = SettingsManager.getInstance();
 
-        // Initialize reminders list
-        reminders = new ArrayList<>();
-        loadRemindersFromFile();
-
-        // Define column names
-        String[] columnNames = {"Title", "Description", "Due Date", "Time", "Priority", "Recurrence"};
-        tableModel = new DefaultTableModel(columnNames, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false; // Disable direct editing
-            }
+        // Reminders table setup
+        String[] cols = {"Reminder", "Date"};
+        tableModel = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
         };
         table = new JTable(tableModel);
+        table.setRowHeight(25);
+        add(new JScrollPane(table), BorderLayout.CENTER);
 
-        // Enable sorting
-        rowSorter = new TableRowSorter<>(tableModel);
-        table.setRowSorter(rowSorter);
-
-        // Add custom cell rendering
-        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
-            @Override
-            public Component getTableCellRendererComponent(JTable table, Object value,
-                                                           boolean isSelected, boolean hasFocus,
-                                                           int row, int column) {
-                Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                String priority = (String) table.getValueAt(row, tableModel.findColumn("Priority"));
-                String dueDate = (String) table.getValueAt(row, tableModel.findColumn("Due Date"));
-
-                if (column == tableModel.findColumn("Priority")) {
-                    if ("High".equalsIgnoreCase(priority)) {
-                        c.setBackground(Color.RED);
-                        c.setForeground(Color.WHITE);
-                    } else if ("Medium".equalsIgnoreCase(priority)) {
-                        c.setBackground(Color.YELLOW);
-                        c.setForeground(Color.BLACK);
-                    } else {
-                        c.setBackground(Color.GREEN);
-                        c.setForeground(Color.BLACK);
-                    }
-                } else if (column == tableModel.findColumn("Due Date")) {
-                    try {
-                        LocalDate date = LocalDate.parse(dueDate, DateTimeFormatter.ISO_DATE);
-                        LocalDate today = LocalDate.now();
-                        if (date.isEqual(today)) {
-                            c.setBackground(Color.RED);
-                            c.setForeground(Color.WHITE);
-                        } else if (date.isEqual(today.plusDays(1))) {
-                            c.setBackground(Color.YELLOW);
-                            c.setForeground(Color.BLACK);
-                        } else {
-                            c.setBackground(Color.WHITE);
-                            c.setForeground(Color.BLACK);
-                        }
-                    } catch (Exception e) {
-                        c.setBackground(Color.WHITE);
-                        c.setForeground(Color.BLACK);
-                    }
-                } else {
-                    c.setBackground(Color.WHITE);
-                    c.setForeground(Color.BLACK);
-                }
-
-                if (isSelected) {
-                    c.setBackground(table.getSelectionBackground());
-                    c.setForeground(table.getSelectionForeground());
-                }
-
-                return c;
-            }
-        });
-
-        // Populate table with existing reminders
-        populateTable();
-
-        scrollPane = new JScrollPane(table);
-
-        // Search functionality
-        JPanel searchPanel = new JPanel(new BorderLayout());
-        searchPanel.add(new JLabel("Search: "), BorderLayout.WEST);
-        searchField = new JTextField();
-        searchPanel.add(searchField, BorderLayout.CENTER);
-        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                filter();
-            }
-
-            public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                filter();
-            }
-
-            public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                filter();
-            }
-        });
-
-        add(searchPanel, BorderLayout.NORTH);
-        add(scrollPane, BorderLayout.CENTER);
-
-        // Button panel
+        // Buttons panel for adding and deleting reminders
         JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton addButton = new JButton("Add Reminder");
-        addButton.addActionListener(e -> addReminder());
-        buttonPanel.add(addButton);
-
-        JButton editButton = new JButton("Edit Reminder");
-        editButton.addActionListener(e -> editReminder());
-        buttonPanel.add(editButton);
-
         JButton deleteButton = new JButton("Delete Reminder");
-        deleteButton.addActionListener(e -> deleteReminder());
+        addButton.addActionListener(e -> openReminderDialog(null));
+        deleteButton.addActionListener(e -> {
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow >= 0) {
+                reminders.remove(selectedRow);
+                refreshTable();
+                saveReminders();
+            }
+        });
+        buttonPanel.add(addButton);
         buttonPanel.add(deleteButton);
-
-        // Refresh button
-        JButton refreshButton = new JButton("Refresh");
-        refreshButton.addActionListener(e -> refreshTableModel());
-        buttonPanel.add(refreshButton);
-
         add(buttonPanel, BorderLayout.SOUTH);
 
-        applySettings();
+        // Load and display existing reminders
+        loadReminders();
+        refreshTable();
 
-        // Listen for background color changes
-        SettingsManager.getInstance().addPropertyChangeListener("backgroundColor", evt -> {
+        // Theming
+        setBackground(settingsManager.getBackgroundColor());
+        table.getTableHeader().setBackground(settingsManager.getBackgroundColor());
+        buttonPanel.setBackground(settingsManager.getBackgroundColor());
+        settingsManager.addPropertyChangeListener("backgroundColor", evt -> {
             Color newColor = (Color) evt.getNewValue();
-            applyBackgroundColor(newColor);
+            setBackground(newColor);
+            table.getTableHeader().setBackground(newColor);
+            buttonPanel.setBackground(newColor);
         });
     }
 
-    private void applySettings() {
-        Color backgroundColor = SettingsManager.getInstance().getBackgroundColor();
-        applyBackgroundColor(backgroundColor);
-    }
-
-    private void applyBackgroundColor(Color color) {
-        setBackground(color);
-        searchField.setBackground(color);
-        scrollPane.getViewport().setBackground(color);
-        revalidate();
-        repaint();
-    }
-
-    private void filter() {
-        String searchText = searchField.getText();
-        if (searchText.trim().isEmpty()) {
-            rowSorter.setRowFilter(null);
-        } else {
-            rowSorter.setRowFilter(RowFilter.regexFilter("(?i)" + searchText));
+    /** Refresh table contents from the reminders list. */
+    private void refreshTable() {
+        tableModel.setRowCount(0);
+        for (Reminder rem : reminders) {
+            tableModel.addRow(new Object[]{rem.getTitle(), rem.getDueDate()});
         }
     }
 
-    private void refreshTableModel() {
-        loadRemindersFromFile(); // Reload reminders from the file
-        tableModel.setRowCount(0); // Clear the table
-        populateTable(); // Repopulate the table with the reloaded reminders
+    /** Open a dialog to add or edit a reminder. */
+    private void openReminderDialog(Reminder existing) {
+        JDialog dialog = new JDialog((Frame)null, (existing==null?"Add Reminder":"Edit Reminder"), true);
+        dialog.setLayout(new GridLayout(3, 2, 10, 10));
+        // Reminder text
+        dialog.add(new JLabel("Reminder:"));
+        JTextField textField = new JTextField(existing != null ? existing.getTitle() : "");
+        dialog.add(textField);
+        // Date text (could be date picker in a full implementation)
+        dialog.add(new JLabel("Date:"));
+        JTextField dateField = new JTextField(existing != null ? existing.getDueDate() : "");
+        dialog.add(dateField);
+        // Buttons
+        JButton saveBtn = new JButton("Save");
+        JButton cancelBtn = new JButton("Cancel");
+        saveBtn.addActionListener(e -> {
+            String text = textField.getText().trim();
+            String date = dateField.getText().trim();
+            if (text.isEmpty() || date.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Please enter both reminder text and date.", "Input Required", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            if (existing != null) {
+                existing.setTitle(text);
+                existing.setDueDate(date);
+            } else {
+                reminders.add(new Reminder(text, date, date, date, date, date));
+            }
+            refreshTable();
+            saveReminders();
+            dialog.dispose();
+        });
+        cancelBtn.addActionListener(e -> dialog.dispose());
+        dialog.add(saveBtn);
+        dialog.add(cancelBtn);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
-
-    private void populateTable() {
-        reminders.forEach(reminder -> tableModel.addRow(new Object[]{
-                reminder.getTitle(),
-                reminder.getDescription(),
-                reminder.getDueDate(),
-                reminder.getTime(),
-                reminder.getPriority(),
-                reminder.getRecurrence()
-        }));
-    }
-
-    private void addReminder() {
-        ReminderDialog dialog = new ReminderDialog(null);
-        Reminder reminder = dialog.showDialog();
-        if (reminder != null) {
-            reminders.add(reminder);
-            saveRemindersToFile();
-            refreshTableModel(); // Refresh immediately after adding
-        }
-    }
-
-    private void editReminder() {
-        int selectedRow = table.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a reminder to edit.", "Warning", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        Reminder reminder = reminders.get(selectedRow);
-        ReminderDialog dialog = new ReminderDialog(reminder);
-        Reminder updatedReminder = dialog.showDialog();
-        if (updatedReminder != null) {
-            reminders.set(selectedRow, updatedReminder);
-            saveRemindersToFile();
-            refreshTableModel(); // Refresh immediately after editing
-        }
-    }
-
-    private void deleteReminder() {
-        int selectedRow = table.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a reminder to delete.", "Warning", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        reminders.remove(selectedRow);
-        saveRemindersToFile();
-        refreshTableModel(); // Refresh immediately after deleting
-    }
-
-    private void saveRemindersToFile() {
+    /** Save reminders to file (reminders.dat). */
+    private void saveReminders() {
         try (FileOutputStream fos = new FileOutputStream("reminders.dat");
-             ObjectOutputStream oos = new ObjectOutputStream(fos)) {
+             java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(fos)) {
             oos.writeObject(reminders);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 
-    private void loadRemindersFromFile() {
+    /** Load reminders from file (reminders.dat). */
+    @SuppressWarnings("unchecked")
+    private void loadReminders() {
         try (FileInputStream fis = new FileInputStream("reminders.dat");
-             ObjectInputStream ois = new ObjectInputStream(fis)) {
-            reminders = (List<Reminder>) ois.readObject();
+             java.io.ObjectInputStream ois = new java.io.ObjectInputStream(fis)) {
+            List<Reminder> loaded = (List<Reminder>) ois.readObject();
+            reminders.clear();
+            reminders.addAll(loaded);
         } catch (Exception e) {
-            reminders = new ArrayList<>();
+            // if file not found or error, start with empty list
         }
     }
 
-
-	    // Adding Note integration
-	    public void addReminderFromNote(Note note) {
-	        Reminder reminder = new Reminder(
-	                note.getTitle(),
-	                note.getContent(),
-	                note.getDate().toString(),
-	                LocalTime.now().toString(), // Default time for the reminder
-	                note.getPriority(),
-	                "None" // Default recurrence
-	        );
-	        reminders.add(reminder);
-	        tableModel.addRow(new Object[]{
-	                reminder.getTitle(),
-	                reminder.getDescription(),
-	                reminder.getDueDate(),
-	                reminder.getTime(),
-	                reminder.getPriority(),
-	                reminder.getRecurrence()
-	        });
-	        saveRemindersToFile();
-	        refreshTableModel(); 
-	        
-	    }
-
-	
-	}
+    /** Allow external panels (AssistantPanel or MeetingNotesPanel) to programmatically add a reminder. */
+    public void addReminder(Reminder reminder) {
+        reminders.add(reminder);
+        refreshTable();
+        saveReminders();
+    }
+}

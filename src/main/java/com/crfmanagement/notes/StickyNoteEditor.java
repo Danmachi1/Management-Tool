@@ -78,16 +78,16 @@ public class StickyNoteEditor extends JDialog {
 
         // Load RTF content
         try {
-            new RTFEditorKit().read(new java.io.StringReader(note.getContent()), pane.getStyledDocument(), 0);
+            new RTFEditorKit().read(new java.io.StringReader(note.getText()), pane.getStyledDocument(), 0);
         } catch (Exception e) {
-            pane.setText(note.getContent());
+            pane.setText(note.getText());
         }
 
         // Save RTF content
         pane.getDocument().addDocumentListener(new DocumentListenerAdapter(() -> {
             try (java.io.StringWriter writer = new java.io.StringWriter()) {
                 new RTFEditorKit().write(writer, pane.getStyledDocument(), 0, pane.getStyledDocument().getLength());
-                note.setContent(writer.toString());
+                note.setText(writer.toString());
                 saveCallback.run();
             } catch (Exception e) {
                 e.printStackTrace();
@@ -343,6 +343,20 @@ public class StickyNoteEditor extends JDialog {
             setLocation(0, 0);
         }
         isMaximized = !isMaximized; // Toggle the maximized state
+    }
+    public boolean isSaved() {
+        return true; // or replace with a proper flag later if needed
+    }
+
+    public String getText() {
+        try {
+            java.io.StringWriter writer = new java.io.StringWriter();
+            new RTFEditorKit().write(writer, contentPane.getStyledDocument(), 0, contentPane.getStyledDocument().getLength());
+            return writer.toString();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return contentPane.getText(); // fallback plain text
+        }
     }
 
 }

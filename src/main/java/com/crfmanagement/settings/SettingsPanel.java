@@ -1,102 +1,91 @@
 package com.crfmanagement.settings;
 
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
 
 public class SettingsPanel extends JPanel {
-    private final JTextField backgroundColorField;
-    private final JButton colorPickerButton;
-    private final JButton saveButton;
-    private final JTextField excelPathField;
-    private final JButton browseButton;
+    private final SettingsManager settingsManager;
+    private final JRadioButton lightThemeRadio;
+    private final JRadioButton darkThemeRadio;
+    private final JButton bgColorButton;
 
     public SettingsPanel() {
-        setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-        setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        super(new GridBagLayout());
+        settingsManager = SettingsManager.getInstance();
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
 
-        SettingsManager settingsManager = SettingsManager.getInstance();
+        // Theme selection
+        JLabel themeLabel = new JLabel("Theme:");
+        lightThemeRadio = new JRadioButton("Light");
+        darkThemeRadio = new JRadioButton("Dark");
+        ButtonGroup themeGroup = new ButtonGroup();
+        themeGroup.add(lightThemeRadio);
+        themeGroup.add(darkThemeRadio);
+        // Set initial selection based on current LookAndFeel
+        boolean isDark = UIManager.getLookAndFeel() instanceof FlatDarkLaf;
+        lightThemeRadio.setSelected(!isDark);
+        darkThemeRadio.setSelected(isDark);
 
-        // Background Color Section
-        JPanel backgroundPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        backgroundPanel.setBorder(BorderFactory.createTitledBorder("Background Color"));
-        JLabel backgroundColorLabel = new JLabel("Color (Hex or RGB):");
-        backgroundColorField = new JTextField(settingsManager.getSetting("background.color", "#FFFFFF"), 10);
-        colorPickerButton = new JButton("Pick Color");
-        colorPickerButton.addActionListener(this::openColorPicker);
-        backgroundPanel.add(backgroundColorLabel);
-        backgroundPanel.add(backgroundColorField);
-        backgroundPanel.add(colorPickerButton);
+        // Theme change listeners
+        lightThemeRadio.addActionListener(e -> switchTheme(false));
+        darkThemeRadio.addActionListener(e -> switchTheme(true));
 
-        // Excel File Path Section
-        JPanel excelPathPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        excelPathPanel.setBorder(BorderFactory.createTitledBorder("Default Excel File Path"));
-        JLabel excelPathLabel = new JLabel("Excel Path:");
-        excelPathField = new JTextField(settingsManager.getSetting("excel.file.path", "Not Set"), 20);
-        browseButton = new JButton("Browse");
-        browseButton.addActionListener(this::openFileChooser);
-        excelPathPanel.add(excelPathLabel);
-        excelPathPanel.add(excelPathField);
-        excelPathPanel.add(browseButton);
+        JPanel themePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        themePanel.add(themeLabel);
+        themePanel.add(lightThemeRadio);
+        themePanel.add(darkThemeRadio);
+        add(themePanel, gbc);
 
-        // Placeholder for Additional Settings
-        JPanel additionalSettingsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        additionalSettingsPanel.setBorder(BorderFactory.createTitledBorder("Additional Settings"));
-        JCheckBox enableNotifications = new JCheckBox("Enable Notifications");
-        enableNotifications.setSelected(Boolean.parseBoolean(settingsManager.getSetting("enable.notifications", "true")));
-        additionalSettingsPanel.add(enableNotifications);
+        // Background color selection
+        gbc.gridy++;
+        JPanel colorPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        colorPanel.add(new JLabel("Background Color:"));
+        bgColorButton = new JButton("Choose...");
+        bgColorButton.addActionListener(e -> {
+            Color initialColor = settingsManager.getBackgroundColor();
+            Color chosen = JColorChooser.showDialog(this, "Choose Background Color", initialColor);
+            if (chosen != null) {
+                settingsManager.setBackgroundColor(chosen);
+            }
+        });
+        colorPanel.add(bgColorButton);
+        add(colorPanel, gbc);
 
-        // Save Button
-        saveButton = new JButton("Save Settings");
-        saveButton.addActionListener(e -> applySettings(enableNotifications.isSelected()));
+        // Fill remaining space
+        gbc.weighty = 1.0;
+        gbc.gridy++;
+        add(new JPanel(), gbc); // spacer
 
-        // Add Components
-        add(backgroundPanel);
-        add(Box.createRigidArea(new Dimension(0, 10))); // Spacer
-        add(excelPathPanel);
-        add(Box.createRigidArea(new Dimension(0, 10))); // Spacer
-        add(additionalSettingsPanel);
-        add(Box.createRigidArea(new Dimension(0, 10))); // Spacer
-        add(saveButton);
+        setBackground(settingsManager.getBackgroundColor());
+        themePanel.setBackground(settingsManager.getBackgroundColor());
+        colorPanel.setBackground(settingsManager.getBackgroundColor());
+        settingsManager.addPropertyChangeListener("backgroundColor", evt -> {
+            Color newColor = (Color) evt.getNewValue();
+            setBackground(newColor);
+            themePanel.setBackground(newColor);
+            colorPanel.setBackground(newColor);
+        });
     }
 
-    private void openColorPicker(ActionEvent e) {
-        Color initialColor = SettingsManager.getInstance().getBackgroundColor();
-        Color selectedColor = JColorChooser.showDialog(this, "Pick a Background Color", initialColor);
-        if (selectedColor != null) {
-            // Convert the selected color to hex format
-            String colorHex = String.format("#%02x%02x%02x", selectedColor.getRed(), selectedColor.getGreen(), selectedColor.getBlue());
-            backgroundColorField.setText(colorHex); // Update the text field with the selected color
-        }
-    }
-
-    private void openFileChooser(ActionEvent e) {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        int result = fileChooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            excelPathField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-        }
-    }
-
-    private void applySettings(boolean notificationsEnabled) {
+    /** Switch between light and dark FlatLaf themes and update UI. */
+    private void switchTheme(boolean dark) {
         try {
-            // Save Background Color
-            String colorHex = backgroundColorField.getText();
-            Color selectedColor = Color.decode(colorHex); // Convert hex to Color
-            SettingsManager.getInstance().setBackgroundColor(selectedColor); // Save the color
-
-            // Save Excel Path
-            String excelPath = excelPathField.getText();
-            SettingsManager.getInstance().setSetting("excel.file.path", excelPath);
-
-            // Save Additional Settings
-            SettingsManager.getInstance().setSetting("enable.notifications", String.valueOf(notificationsEnabled));
-
-            JOptionPane.showMessageDialog(this, "Settings saved and applied successfully!");
-
-        } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, "Invalid color format. Please use a valid hex color code.", "Error", JOptionPane.ERROR_MESSAGE);
+            if (dark) {
+                UIManager.setLookAndFeel(new FlatDarkLaf());
+            } else {
+                UIManager.setLookAndFeel(new FlatLightLaf());
+            }
+            // Update all existing UI components to new L&F
+            SwingUtilities.updateComponentTreeUI(SwingUtilities.getWindowAncestor(this));
+            // Persist theme choice if desired (this example does not explicitly save theme preference)
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
     }
 }

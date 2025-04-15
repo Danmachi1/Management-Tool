@@ -1,12 +1,15 @@
 package com.crfmanagement.task;
 
 import com.crfmanagement.settings.SettingsManager;
+import com.crfmanagement.tag.Tag;
+import com.crfmanagement.tag.TagManager;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import java.awt.*;
-import java.io.*;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,238 +17,256 @@ public class TaskManagementPanel extends JPanel {
     private final DefaultTableModel tableModel;
     private final List<Task> tasks;
     private JTable table;
-    private JScrollPane scrollPane;
-    private JPanel buttonPanel;
+    private final SettingsManager settingsManager;
+    private final TagManager tagManager;
+    private JTextField searchField;
+    private JComboBox<String> tagFilterCombo;
 
     public TaskManagementPanel() {
-        setLayout(new BorderLayout());
-        tasks = new ArrayList<>();
-        loadTasks();
+        super(new BorderLayout());
+        this.tasks = new ArrayList<>();
+        this.settingsManager = SettingsManager.getInstance();
+        this.tagManager = TagManager.getInstance(); // Global TagManager for tags
 
-        // Create table model
-        String[] columnNames = {"Date", "Description", "Completed"};
+        // Define table columns including new "Tag"
+        String[] columnNames = {"Date", "Description", "Completed", "Tag"};
         tableModel = new DefaultTableModel(columnNames, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return column == 2; // Only the "Completed" column is editable
-            }
-
-            @Override
-            public Class<?> getColumnClass(int columnIndex) {
-                return columnIndex == 2 ? Boolean.class : String.class; // Checkbox for "Completed"
+            @Override public boolean isCellEditable(int row, int column) {
+                return false;
             }
         };
-
-        // Create and configure table
         table = new JTable(tableModel);
-        table.setRowHeight(40);
+        table.setRowHeight(30);
 
-        // Create scroll pane and configure background
-        scrollPane = new JScrollPane(table);
-        scrollPane.getViewport().setBackground(SettingsManager.getInstance().getBackgroundColor()); // Table area background
-        scrollPane.setBackground(SettingsManager.getInstance().getBackgroundColor()); // Scroll pane background
+        // Panel for search and filter controls
+        JPanel topPanel = new JPanel(new BorderLayout());
+        // Text search field
+        searchField = new JTextField();
+        searchField.setToolTipText("Search tasks...");
+        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { filterTasks(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { filterTasks(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { filterTasks(); }
+        });
+        topPanel.add(new JLabel("Search: "), BorderLayout.WEST);
+        topPanel.add(searchField, BorderLayout.CENTER);
+        // Tag filter dropdown
+        tagFilterCombo = new JComboBox<>();
+        tagFilterCombo.addItem("All Tags");
+        for (Tag tag : tagManager.getTags()) {
+            tagFilterCombo.addItem(tag.getName());
+        }
+        tagFilterCombo.addActionListener(e -> filterTasks());
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        filterPanel.add(new JLabel("Filter by Tag:"));
+        filterPanel.add(tagFilterCombo);
+        topPanel.add(filterPanel, BorderLayout.EAST);
 
-        add(scrollPane, BorderLayout.CENTER);
+        add(topPanel, BorderLayout.NORTH);
+        add(new JScrollPane(table), BorderLayout.CENTER);
 
-        // Add buttons for task management
-        buttonPanel = new JPanel(new FlowLayout());
+        // Button panel for add/edit/delete actions
+        JPanel buttonPanel = new JPanel(new FlowLayout());
         JButton addTaskButton = new JButton("Add Task");
         JButton editTaskButton = new JButton("Edit Task");
         JButton deleteTaskButton = new JButton("Delete Task");
-
         addTaskButton.addActionListener(e -> openTaskDialog(null));
         editTaskButton.addActionListener(e -> {
             int selectedRow = table.getSelectedRow();
-            if (selectedRow != -1) {
+            if (selectedRow >= 0) {
                 Task selectedTask = tasks.get(selectedRow);
                 openTaskDialog(selectedTask);
             } else {
-                JOptionPane.showMessageDialog(this, "Please select a task to edit.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Please select a task to edit.", "No Task Selected", JOptionPane.WARNING_MESSAGE);
             }
         });
         deleteTaskButton.addActionListener(e -> {
             int selectedRow = table.getSelectedRow();
-            if (selectedRow != -1) {
-                tasks.remove(selectedRow);
-                refreshTable();
-                saveTasks();
+            if (selectedRow >= 0) {
+                int confirm = JOptionPane.showConfirmDialog(this, "Delete selected task?", "Confirm Delete", JOptionPane.YES_NO_OPTION);
+                if (confirm == JOptionPane.YES_OPTION) {
+                    tasks.remove(selectedRow);
+                    refreshTable();
+                    saveTasks();
+                }
             } else {
-                JOptionPane.showMessageDialog(this, "Please select a task to delete.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Please select a task to delete.", "No Task Selected", JOptionPane.WARNING_MESSAGE);
             }
         });
-
         buttonPanel.add(addTaskButton);
         buttonPanel.add(editTaskButton);
         buttonPanel.add(deleteTaskButton);
         add(buttonPanel, BorderLayout.SOUTH);
 
-        // Populate table with existing tasks
+        // Load tasks from file
+        loadTasks();
         refreshTable();
 
-        // Dynamic Background Color Updates
-        SettingsManager.getInstance().addPropertyChangeListener("backgroundColor", evt -> {
+        // Theming: apply background from settings
+        setBackground(settingsManager.getBackgroundColor());
+        table.getTableHeader().setBackground(settingsManager.getBackgroundColor());
+        topPanel.setBackground(settingsManager.getBackgroundColor());
+        filterPanel.setBackground(settingsManager.getBackgroundColor());
+        buttonPanel.setBackground(settingsManager.getBackgroundColor());
+        // Listen for theme change
+        settingsManager.addPropertyChangeListener("backgroundColor", evt -> {
             Color newColor = (Color) evt.getNewValue();
             setBackground(newColor);
+            table.getTableHeader().setBackground(newColor);
+            topPanel.setBackground(newColor);
+            filterPanel.setBackground(newColor);
             buttonPanel.setBackground(newColor);
-            scrollPane.getViewport().setBackground(newColor); // Scroll pane viewport
-            scrollPane.setBackground(newColor); // Scroll pane itself
-            table.setBackground(newColor);
-
-            // Update table header background
-            JTableHeader tableHeader = table.getTableHeader();
-            tableHeader.setBackground(newColor);
-
             revalidate();
             repaint();
         });
-
-        // Apply initial settings
-        applySettings();
     }
 
+    /** Refreshes the task table to reflect the current list (with any filters currently applied). */
     private void refreshTable() {
-        tableModel.setRowCount(0); // Clear the table
+        tableModel.setRowCount(0); // clear table
         for (Task task : tasks) {
             tableModel.addRow(new Object[]{
                 task.getDate(),
                 task.getDescription(),
-                task.isCompleted()
+                task.isCompleted() ? "Yes" : "No",
+                (task.getTag() != null ? task.getTag() : "")
             });
         }
     }
 
+    /** Opens a dialog to add or edit a Task. If existingTask is null, it creates a new task on save. */
     private void openTaskDialog(Task existingTask) {
-        JDialog dialog = new JDialog((Frame) null, "Add/Edit Task", true);
+        JDialog dialog = new JDialog((Frame) null, (existingTask == null ? "Add Task" : "Edit Task"), true);
         dialog.setLayout(new BorderLayout());
+        JPanel inputPanel = new JPanel(new GridLayout(4, 2, 10, 10));
 
-        JPanel inputPanel = new JPanel(new GridLayout(3, 2, 10, 10));
-
+        // Date input (simple text or structured date input)
         JLabel dateLabel = new JLabel("Date:");
-        JPanel datePicker = createDatePicker(existingTask != null ? existingTask.getDate() : null);
+        JTextField dateField = new JTextField(existingTask != null ? existingTask.getDate() : "");
         inputPanel.add(dateLabel);
-        inputPanel.add(datePicker);
+        inputPanel.add(dateField);
 
+        // Description input
         JLabel descriptionLabel = new JLabel("Description:");
         JTextField descriptionField = new JTextField(existingTask != null ? existingTask.getDescription() : "");
         inputPanel.add(descriptionLabel);
         inputPanel.add(descriptionField);
 
+        // Completed checkbox
         JLabel completedLabel = new JLabel("Completed:");
         JCheckBox completedCheckBox = new JCheckBox();
         completedCheckBox.setSelected(existingTask != null && existingTask.isCompleted());
         inputPanel.add(completedLabel);
         inputPanel.add(completedCheckBox);
 
+        // Tag selection (dropdown of available tags)
+        JLabel tagLabel = new JLabel("Tag:");
+        JComboBox<String> tagCombo = new JComboBox<>();
+        tagCombo.addItem("(None)");
+        for (Tag tag : tagManager.getTags()) {
+            tagCombo.addItem(tag.getName());
+        }
+        if (existingTask != null && existingTask.getTag() != null) {
+            tagCombo.setSelectedItem(existingTask.getTag());
+        } else {
+            tagCombo.setSelectedItem("(None)");
+        }
+        inputPanel.add(tagLabel);
+        inputPanel.add(tagCombo);
+
         dialog.add(inputPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout());
+        // Save/Cancel buttons
+        JPanel dialogButtonPanel = new JPanel(new FlowLayout());
         JButton saveButton = new JButton("Save");
         saveButton.addActionListener(e -> {
-            try {
-                String date = getSelectedDate(datePicker);
-                String description = descriptionField.getText();
-                boolean completed = completedCheckBox.isSelected();
-
-                if (date.isEmpty() || description.isEmpty()) {
-                    JOptionPane.showMessageDialog(dialog, "Date and Description are required.", "Error", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                if (existingTask != null) {
-                    existingTask.setDate(date);
-                    existingTask.setDescription(description);
-                    existingTask.setCompleted(completed);
-                } else {
-                    tasks.add(new Task(date, description, completed));
-                }
-                refreshTable();
-                saveTasks();
-                dialog.dispose();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(dialog, "Invalid date or description.", "Error", JOptionPane.ERROR_MESSAGE);
+            String date = dateField.getText().trim();
+            String description = descriptionField.getText().trim();
+            boolean completed = completedCheckBox.isSelected();
+            String selectedTag = (String) tagCombo.getSelectedItem();
+            if (selectedTag != null && selectedTag.equals("(None)")) {
+                selectedTag = null;
             }
+            if (date.isEmpty() || description.isEmpty()) {
+                JOptionPane.showMessageDialog(dialog, "Date and Description are required.", "Validation Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            if (existingTask != null) {
+                // Update existing task
+                existingTask.setDate(date);
+                existingTask.setDescription(description);
+                existingTask.setCompleted(completed);
+                existingTask.setTag(selectedTag);
+            } else {
+                // Create new task and add to list
+                Task newTask = new Task(date, description, completed, selectedTag);
+                tasks.add(newTask);
+            }
+            // After changes, refresh table and save to file
+            refreshTable();
+            saveTasks();
+            dialog.dispose();
         });
-        buttonPanel.add(saveButton);
-
+        dialogButtonPanel.add(saveButton);
         JButton cancelButton = new JButton("Cancel");
         cancelButton.addActionListener(e -> dialog.dispose());
-        buttonPanel.add(cancelButton);
+        dialogButtonPanel.add(cancelButton);
+        dialog.add(dialogButtonPanel, BorderLayout.SOUTH);
 
-        dialog.add(buttonPanel, BorderLayout.SOUTH);
         dialog.pack();
-        dialog.setLocationRelativeTo(null);
+        dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
     }
 
-    private JPanel createDatePicker(String existingDate) {
-        JPanel panel = new JPanel(new FlowLayout());
-        JComboBox<Integer> dayCombo = new JComboBox<>();
-        JComboBox<String> monthCombo = new JComboBox<>(new String[]{
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        });
-        JComboBox<Integer> yearCombo = new JComboBox<>();
-
-        for (int i = 1; i <= 31; i++) dayCombo.addItem(i);
-        int currentYear = java.time.LocalDate.now().getYear();
-        for (int i = currentYear - 5; i <= currentYear + 5; i++) yearCombo.addItem(i);
-
-        if (existingDate != null) {
-            String[] parts = existingDate.split("-");
-            yearCombo.setSelectedItem(Integer.parseInt(parts[0]));
-            monthCombo.setSelectedIndex(Integer.parseInt(parts[1]) - 1);
-            dayCombo.setSelectedItem(Integer.parseInt(parts[2]));
+    /** Filter tasks by search text and/or selected tag. */
+    private void filterTasks() {
+        String query = searchField.getText().trim().toLowerCase();
+        String tagFilter = (String) tagFilterCombo.getSelectedItem();
+        tableModel.setRowCount(0);
+        for (Task task : tasks) {
+            boolean matchesText = query.isEmpty() 
+                                   || task.getDescription().toLowerCase().contains(query)
+                                   || task.getDate().toLowerCase().contains(query);
+            boolean matchesTag = (tagFilter == null || "All Tags".equals(tagFilter))
+                                   || (task.getTag() != null && task.getTag().equals(tagFilter))
+                                   || (task.getTag() == null && "All Tags".equals(tagFilter));
+            if (matchesText && matchesTag) {
+                tableModel.addRow(new Object[]{
+                    task.getDate(),
+                    task.getDescription(),
+                    task.isCompleted() ? "Yes" : "No",
+                    (task.getTag() != null ? task.getTag() : "")
+                });
+            }
         }
-
-        panel.add(dayCombo);
-        panel.add(monthCombo);
-        panel.add(yearCombo);
-        return panel;
     }
 
-    private String getSelectedDate(JPanel datePicker) {
-        JComboBox<Integer> dayCombo = (JComboBox<Integer>) datePicker.getComponent(0);
-        JComboBox<String> monthCombo = (JComboBox<String>) datePicker.getComponent(1);
-        JComboBox<Integer> yearCombo = (JComboBox<Integer>) datePicker.getComponent(2);
-
-        int day = (Integer) dayCombo.getSelectedItem();
-        int month = monthCombo.getSelectedIndex() + 1;
-        int year = (Integer) yearCombo.getSelectedItem();
-
-        return String.format("%04d-%02d-%02d", year, month, day);
-    }
-
-    private void saveTasks() {
-        try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream("tasks.dat"))) {
+    /** Save tasks list to file (tasks.dat) using object serialization. */
+    @SuppressWarnings("unchecked")
+    public void saveTasks() {
+        try (FileOutputStream fos = new FileOutputStream("tasks.dat");
+             java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(fos)) {
             oos.writeObject(tasks);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to save tasks.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
+    /** Load tasks list from file (tasks.dat) if exists. */
+    @SuppressWarnings("unchecked")
     private void loadTasks() {
-        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream("tasks.dat"))) {
-            tasks.addAll((List<Task>) ois.readObject());
-        } catch (FileNotFoundException e) {
-            // No tasks to load
-        } catch (IOException | ClassNotFoundException e) {
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Failed to load tasks.", "Error", JOptionPane.ERROR_MESSAGE);
+        try (FileInputStream fis = new FileInputStream("tasks.dat");
+             java.io.ObjectInputStream ois = new java.io.ObjectInputStream(fis)) {
+            List<Task> loadedTasks = (List<Task>) ois.readObject();
+            tasks.clear();
+            tasks.addAll(loadedTasks);
+        } catch (Exception e) {
+            // If file not found or error, start with empty task list
         }
     }
 
-    private void applySettings() {
-        Color backgroundColor = SettingsManager.getInstance().getBackgroundColor();
-        setBackground(backgroundColor);
-        buttonPanel.setBackground(backgroundColor);
-        scrollPane.getViewport().setBackground(backgroundColor); // Scroll pane viewport
-        scrollPane.setBackground(backgroundColor); // Scroll pane itself
-        table.setBackground(backgroundColor);
-
-        JTableHeader tableHeader = table.getTableHeader();
-        tableHeader.setBackground(backgroundColor);
-
-        repaint();
+    /** Provide access to the internal task list (for Assistant panel to read tasks, for example). */
+    public List<Task> getTasks() {
+        return tasks;
     }
 }

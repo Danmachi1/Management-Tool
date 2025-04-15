@@ -14,6 +14,7 @@ public class Note implements Serializable {
     private Color color; // Add color field
     private boolean selected; // For selection
 
+    // ✅ Original constructor
     public Note(String title, String content, LocalDate date, String priority, String[] tags) {
         this.title = title;
         this.content = content;
@@ -24,20 +25,33 @@ public class Note implements Serializable {
         this.selected = false; // Default selection state
     }
 
+    // ✅ New 1-arg constructor used in MeetingNotesPanel
+    public Note(String text) {
+        this.content = text;
+        this.title = "Untitled";
+        this.date = LocalDate.now();
+        this.priority = "Normal";
+        this.tags = new String[0];
+        this.color = Color.YELLOW;
+        this.selected = false;
+    }
+
+    // ✅ Aliases for `getText()` and `setText()` (used in StickyNoteEditor and NotePanel)
+    public String getText() {
+        return content;
+    }
+
+    public void setText(String text) {
+        this.content = text;
+    }
+
+    // Existing getters/setters
     public String getTitle() {
         return title;
     }
 
     public void setTitle(String title) {
         this.title = title;
-    }
-
-    public String getContent() {
-        return content;
-    }
-
-    public void setContent(String content) {
-        this.content = content;
     }
 
     public LocalDate getDate() {

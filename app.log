@@ -1,0 +1,4 @@
+2025-04-08 16:42:15 - Failed login attempt for username ''
+2025-04-08 16:43:15 - User 'admin' logged in. Role: ADMIN
+2025-04-08 16:43:30 - User admin loaded Excel file 'C:\Users\Admin\Desktop\CRF_Tracker_Sheet.xlsx' with 2 tasks.
+2025-04-08 16:44:02 - User admin applied filter - Assignee: Salah, Status: All, DateFrom: none, DateTo: none (Result: 2 tasks)
