@@ -1,53 +1,87 @@
 # CRF Management Tool
 
-## 📌 Overview
-CRF Management Tool is a **Java-based desktop application** designed to streamline and enhance **PSL tracking, task management, meeting notes, reminders, and dashboard visualization**. This tool provides a structured, user-friendly interface to help teams manage complex workflows efficiently.
+A Java Swing desktop project for organizing tasks, meeting notes, reminders
+and spreadsheet-based project tracking. It uses internal windows so several
+views can be open together.
 
-## 🚀 Features
-- **Modern UI with Internal Frames** for a seamless experience.
-- **PSL Tracker** to monitor and manage workflows.
-- **Task Management Panel** for organizing tasks efficiently.
-- **Meeting Notes Panel** to keep track of discussions and decisions.
-- **Reminders System** to ensure deadlines are met.
-- **Customizable Window Management** (cascade, tile, pop-out, etc.).
-- **Outlook Calendar Integration** for quick access to scheduling.
+## What is in the source
 
-## 🏗️ Technologies Used
-- **Java (Swing)** for GUI development.
-- **GitHub API** for remote repository management.
-- **Maven** for dependency management.
+- Dashboard and PSL tracker that read Excel workbooks through Apache POI
+- Task lists, meeting notes, sticky-note editing and reminders
+- Appearance and application settings with property-change notifications
+- Internal-window cascade, tiling, reopening and pop-out controls
+- A Windows-specific command that opens the installed Outlook calendar
 
-## 🔧 Installation & Setup
-1. **Clone the repository:**
-   ```sh
-   git clone https://github.com/Danmachi1/CRF-Management-Tool.git
-   ```
-2. **Open in Eclipse:**
-   - Go to `File -> Open Projects from File System`.
-   - Select the cloned repository folder.
-3. **Run the application:**
-   - Open `MainApp.java` and run the `main` method.
+The calendar action is a local launcher, not Outlook API synchronization.
+The current source does not implement GitHub repository management.
 
-## 🎯 How to Use
-- **Navigation:** Use the **menu bar** to switch between features.
-- **Opening Calendar:** Click on `Open Calendar` to launch Outlook.
-- **Task Management:** Add, update, and track tasks seamlessly.
-- **PSL Tracker:** Monitor progress on different CRF steps.
-- **Reminders:** Set and view notifications for important events.
+## Requirements and setup
 
-## 📷 Screenshots
-*(To be added soon!)*
+Use a full JDK 17 or newer, Maven, and a graphical desktop. The Maven
+dependency is Apache POI 5.2.3 as declared in [pom.xml](pom.xml).
+The Outlook launcher additionally requires Windows and an appropriate
+registered application.
 
-## 📜 License
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+```sh
+git clone https://github.com/Danmachi1/Management-Tool.git
+cd Management-Tool
+mvn -Dmaven.compiler.source=17 -Dmaven.compiler.target=17 clean package
+```
 
-## 🤝 Contributing
-Contributions are welcome! If you'd like to contribute:
-1. Fork the repo
-2. Create a new branch (`feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add new feature'`)
-4. Push to your branch (`git push origin feature/your-feature`)
-5. Create a Pull Request
+Import the Maven project into an IDE and run
+`com.crfmanagement.gui.MainApp`. Set the launch working directory to a
+new, empty directory outside the checkout. This prevents loading the
+repository's existing local-data files. Build from source rather than
+reusing the committed `target/` output.
 
-## 📬 Contact
-For inquiries or collaboration, reach out to me via **[GitHub](https://github.com/Danmachi1)** or email at `your-email@example.com`.
+The build command is provided for a normal JDK/Maven setup. A complete
+Maven build and graphical launch were not verified in the focused
+settings regression pass described below.
+
+## Local data and safe demonstrations
+
+The application reads and writes `notes.dat`, `tasks.dat`,
+`reminders.dat` and `settings.properties` relative to its working
+directory. The `.dat` files use Java serialization: never load files from
+an untrusted source. Use synthetic notes and workbooks for demonstrations.
+Do not commit personal data, customer records or local file paths.
+
+The Excel readers expect particular columns on the first worksheet; they
+are not a generic spreadsheet importer. See [ExcelReader](src/main/java/com/crfmanagement/utils/ExcelReader.java)
+and [DashboardPanel](src/main/java/com/crfmanagement/dashboard/DashboardPanel.java)
+before preparing a fixture.
+
+## Settings regression tests
+
+The focused tests need Python 3 and JDK 17 or newer, but no Maven,
+third-party test library, graphical session or network access:
+
+```sh
+python3 scripts/test_settings.py
+```
+
+On Windows, `python scripts/test_settings.py` is equivalent. Put the JDK
+on PATH; alternatively set `JAVA` to the Java executable. The runner uses
+`javac` when available, otherwise the JDK compiler module.
+
+Each case runs in its own temporary working directory. Tests cover
+defaults, hex/RGB colors, malformed files, invalid updates, null updates,
+reload behavior, typed change events and ordinary setting persistence.
+
+Color values accept `#RRGGBB` or three comma-separated RGB integers.
+Malformed stored colors fall back to white without destroying unrelated
+settings. Invalid updates are rejected before mutating or saving state.
+
+Focused validation on OpenJDK 21: **13/13 scenarios passed**.
+With the original SettingsManager source and the same tests, **8/13
+scenarios failed**. This is scoped regression evidence, not proof of
+complete application or dependency security.
+
+## Project scope and licensing
+
+This desktop project focuses on local task management and Excel-based
+tracking. It does not include a hosted service, encryption or user access
+controls.
+
+The older README stated MIT licensing, but no root LICENSE file is
+present. This documentation does not establish or change licensing terms.

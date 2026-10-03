@@ -52,17 +52,11 @@ public class SettingsManager {
 
     // Set a Setting with Property Change Support
     public void setSetting(String key, String value) {
+        // Validate before changing either the in-memory or persisted setting.
+        Object newValue = "background.color".equals(key) ? parseColor(value) : value;
         Object oldValue = settings.put(key, value);
-        Object newValue = value;
-
-        // Handle specific keys like "background.color" and convert to appropriate types
-        if ("background.color".equals(key)) {
-            try {
-                newValue = parseColor(value);
-                setBackgroundColor((Color) newValue); // Ensure backgroundColor updates properly
-            } catch (Exception e) {
-                System.err.println("Invalid color format for property change: " + value);
-            }
+        if (newValue instanceof Color) {
+            setBackgroundColor((Color) newValue);
         }
 
         propertyChangeSupport.firePropertyChange(key, oldValue, newValue); // Notify listeners
@@ -80,7 +74,13 @@ public class SettingsManager {
             settings.load(fis);
             String colorValue = settings.getProperty("background.color");
             if (colorValue != null) {
-                this.backgroundColor = parseColor(colorValue); // Initialize backgroundColor from settings
+                try {
+                    this.backgroundColor = parseColor(colorValue);
+                } catch (IllegalArgumentException invalidColor) {
+                    this.backgroundColor = null;
+                    settings.remove("background.color");
+                    System.err.println("Invalid background color in settings; using the default.");
+                }
             }
         } catch (IOException e) {
             System.out.println("No settings file found, using defaults.");
@@ -94,6 +94,7 @@ public class SettingsManager {
 
     // Set Background Color with Property Change Support
     public void setBackgroundColor(Color newColor) {
+        java.util.Objects.requireNonNull(newColor, "Background color must not be null");
         Color oldColor = this.backgroundColor;
         this.backgroundColor = newColor;
         settings.setProperty("background.color", String.format("#%02x%02x%02x", newColor.getRed(), newColor.getGreen(), newColor.getBlue()));
@@ -103,14 +104,19 @@ public class SettingsManager {
 
     // Parse Color String to Color Object
     private Color parseColor(String colorValue) {
-        if (colorValue.startsWith("#")) {
-            return Color.decode(colorValue); // Hexadecimal format
-        } else {
-            String[] rgb = colorValue.split(",");
-            int r = Integer.parseInt(rgb[0].trim());
-            int g = Integer.parseInt(rgb[1].trim());
-            int b = Integer.parseInt(rgb[2].trim());
-            return new Color(r, g, b); // RGB format
+        if (colorValue == null) {
+            throw new IllegalArgumentException("Background color must not be null");
         }
+        String value = colorValue.trim();
+        if (value.matches("#[0-9a-fA-F]{6}")) {
+            return Color.decode(value);
+        }
+        String[] rgb = value.split(",", -1);
+        if (rgb.length != 3) {
+            throw new IllegalArgumentException("Use #RRGGBB or three comma-separated RGB values");
+        }
+        return new Color(Integer.parseInt(rgb[0].trim()),
+                         Integer.parseInt(rgb[1].trim()),
+                         Integer.parseInt(rgb[2].trim()));
     }
 }
